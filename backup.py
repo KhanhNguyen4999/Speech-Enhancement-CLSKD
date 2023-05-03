@@ -8,6 +8,7 @@ import torchvision.transforms as transforms
 import pytorch_lightning as pl
 import torchmetrics
 from lightning.pytorch.accelerators import find_usable_cuda_devices
+from torch.optim.lr_scheduler import StepLR
 
 batch_size = 32
 
@@ -68,6 +69,7 @@ class KnowledgeDistillation(pl.LightningModule):
     
     def configure_optimizers(self):
         optimizer = optim.Adam(self.student.parameters(), lr=1e-3)
+        #scheduler = StepLR(optimizer, step_size=1000, gamma=0.1)
         return optimizer
     
     def train_dataloader(self):
@@ -105,7 +107,7 @@ teacher = TeacherNet()
 student = StudentNet()
 
 # initialize trainer
-trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[1])
+trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[0])
 
 # initialize knowledge distillation module
 kd_module = KnowledgeDistillation(teacher, student)

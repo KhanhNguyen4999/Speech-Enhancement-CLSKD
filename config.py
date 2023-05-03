@@ -3,10 +3,10 @@ Configuration for program
 """
 
 #distillation
-teacher = ''
-student = ''
-dataset = ''
-teacher_weight_path = ''
+teacher = 'DCCRN'
+student = 'DCCRN'
+dataset = 'dns_challenge'
+teacher_weight_path = f'./pretrained/chkpt_1.pt'
 lr = 0.1
 lr_decay_steps = [12, 17]
 lr_decay_rate = 0.1,

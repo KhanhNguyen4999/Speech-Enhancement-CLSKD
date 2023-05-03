@@ -11,30 +11,40 @@ from lightning.pytorch.accelerators import find_usable_cuda_devices
 from asteroid.data import DNSDataset
 from DCCRN import DCCRN
 
-from framework import RLF, ABF, MultiResolutionSTFTLoss, SPKDLoss
+from framework import ABF, MultiResolutionSTFTLoss, SPKDLoss, build_review_kd, ReviewKD
+import feature_extraction
 from params import params
 import config as cfg
 
-batch_size = 32
 CUDA_LAUNCH_BLOCKING=1
 
 class KnowledgeDistillation(pl.LightningModule):
-    def __init__(self, teacher, student, RLF, feature_fusion, sftf_loss, spkd_loss, params):
+    def __init__(self, teacher, student, RLF, feature_fusion, sftf_loss, spkd_loss, cfg):
         super().__init__()
+        self.save_hyperparameters()
+
         #load teacher (pre-trained)
         self.teacher = teacher
+        self.teacher_weight = torch.load(cfg.teacher_weight_path)
+        self.teacher.load_state_dict(self.teacher_weight)
+        #freeze teacher
+        for paras in self.teacher.parameters():
+            paras.requires_grad = False
 
-
+        #load student model
         self.student = student
+
+        #SPKD loss
         self.spkd_loss = spkd_loss
+        #featuer fusion
         self.abf = feature_fusion
+
         #MR SFTF loss
         self.base_loss = sftf_loss[1]
-        self.rlf = RLF(self.student, abf_to_use = self.abf)
-        self.kd_loss_weight = 0.6
+        self.student_review_kd = build_review_kd(self.student)
+        self.kd_loss_weight = cfg.kd_loss_weight
 
 
-    
     def forward(self, x):
         return self.rlf(x)
     
@@ -43,29 +53,33 @@ class KnowledgeDistillation(pl.LightningModule):
         X, y = X.cuda(), y.cuda()
 
         losses = {"kd_loss": 0, "base_loss": 0}
-
-        # getting student and teacher features
-        student_features, student_preds = self.rlf(X)
-        #need encoder-decoder extracion
-        teacher_features, teacher_preds = self.teacher(X,)
-
-        teacher_features = teacher_features[1:]
-
-        # calculating review kd loss
-        for sf, tf in zip(student_features, teacher_features):
-            losses['kd_loss'] += self.spkd_loss(sf, tf,'batchmean')
-
-        # calculating base_loss (Multi-resolution STFT)
-        losses['base_loss'] = self.base_loss(student_preds, y)
-
-        loss = losses['kd_loss'] * self.kd_loss_weight
-        loss += losses['base_loss']
-
-        self.log('train_loss', loss)
-        for key in losses:
-            self.log(f'train_{key}', losses[key])
         
+        feature_maps = {'encoder':0,'decoder':0,'CLSTM_real':0,'CLSTM_img':0}
+        for ft_map in feature_maps:
+            # getting student and teacher features
+            student_features, student_preds = self.student_review_kd(X, ft_map)
+
+            teacher_features = feature_extraction.FE_DCCRN(teacher).extract_feature_maps(X, ft_map)
+
+            # calculating review kd loss
+            for sf, tf in zip(student_features, teacher_features):
+                losses['kd_loss'] += self.spkd_loss(sf, tf,'batchmean')
+
+            # calculating base_loss (Multi-resolution STFT)
+            losses['base_loss'] = self.base_loss(student_preds, y)
+
+            loss = losses['kd_loss'] * self.kd_loss_weight
+            loss += losses['base_loss']
+
+            self.log('train_loss', loss)
+            for key in losses:
+                self.log(f'train_{key}', losses[key])
+            teacher_features.clear()
+            #save loss:
+            feature_maps[ft_map] = loss
+        loss = sum(feature_maps.values())
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -81,7 +95,7 @@ class KnowledgeDistillation(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(
             self.rlf.parameters(),
-            lr=0.1,
+            lr=cfg.lr,
             momentum=0.9,
             nesterov=True,
             weight_decay=5e-4,
@@ -123,11 +137,11 @@ trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[1])
 # initialize knowledge distillation module
 kd_module = KnowledgeDistillation(teacher, 
                                   student, 
-                                  RLF=RLF, 
+                                  RLF=ReviewKD, 
                                   feature_fusion=ABF, 
                                   sftf_loss=MultiResolutionSTFTLoss, 
                                   spkd_loss=SPKDLoss,
-                                  params=params)
+                                  cfg=cfg)
 
 # train the student network using knowledge distillation
 trainer.fit(kd_module)

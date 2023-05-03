@@ -1,5 +1,3 @@
-
-
 # Distilling Knowledge via Knowledge Review
 # |----> Uses Residual Learning Framework
 #        |----> Uses SPKD
@@ -11,6 +9,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.functional import normalize
+import DCCRN
+import config as cfg
+import feature_extraction
 
 def stft(x, fft_size, hop_size, win_length, window):
     """Perform STFT and convert to magnitude spectrogram.
@@ -172,113 +173,79 @@ class SPKDLoss(nn.Module):
 
 
 ########## Attention Based Fusion Module ##########
-
-# Paper states that the output from the ABF module (single output as
-# presented in the ABF flow diagram, fig. 3(a)) is the one of the inputs to
-# the next ABF module.
-
-# But the authors' code implementation provides two different outputs, one that
-# proceeds to the next ABF module (`residual_output`) and one that
-# is the output of the ABF module and which is involved in the loss
-# function (`abf_output`)
-# The `residual_output` differs from the `abf_output` in terms of the number
-# of channels. The `residual_output` has `mid_channels` while the `abf_output`
-# has `out_channels`
-
-# In this implementation, we have taken the latter approach
-
-# The second approach can be found in experimental/abf_experiments.py
-
 class ABF(nn.Module):
-    def __init__(self, in_channel, out_channel):
+    def __init__(self, in_channel, mid_channel, out_channel, fuse):
         super(ABF, self).__init__()
-
-        self.mid_channel = 64
-
-        self.conv_to_mid_channel = nn.Sequential(
-            nn.Conv2d(in_channel, self.mid_channel, kernel_size=1, bias=False),
-            nn.BatchNorm2d(self.mid_channel),
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channel, mid_channel, kernel_size=1, bias=False),
+            nn.BatchNorm2d(mid_channel),
         )
-        nn.init.kaiming_uniform_(self.conv_to_mid_channel[0].weight, a=1)
-
-        self.conv_to_out_channel = nn.Sequential(
-            nn.Conv2d(self.mid_channel, out_channel, kernel_size=3,
-                      stride=1, padding=1, bias=False),
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(mid_channel, out_channel,kernel_size=3,stride=1,padding=1,bias=False),
             nn.BatchNorm2d(out_channel),
         )
-        nn.init.kaiming_uniform_(self.conv_to_out_channel[0].weight, a=1)
-
-        self.conv_to_att_maps = nn.Sequential(
-            nn.Conv2d(self.mid_channel * 2, 2, kernel_size=1),
-            nn.Sigmoid(),
-        )
-        nn.init.kaiming_uniform_(self.conv_to_att_maps[0].weight, a=1)
-
-    def forward(self, student_feature, prev_abf_output, teacher_shape):
-        n, c, h, w = student_feature.shape
-        student_feature = self.conv_to_mid_channel(student_feature)
-
-        if prev_abf_output is None:
-            residual_output = student_feature
+        if fuse:
+            self.att_conv = nn.Sequential(
+                    nn.Conv2d(mid_channel*2, 2, kernel_size=1),
+                    nn.Sigmoid(),
+                )
         else:
-            prev_abf_output = F.interpolate(prev_abf_output, size=(
-                teacher_shape, teacher_shape), mode='nearest')
+            self.att_conv = None
+        nn.init.kaiming_uniform_(self.conv1[0].weight, a=1)  # pyre-ignore
+        nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)  # pyre-ignore
 
-            concat_features = torch.cat(
-                [student_feature, prev_abf_output], dim=1)
-            attention_maps = self.conv_to_att_maps(concat_features)
-            attention_map1 = attention_maps[:, 0].view(n, 1, h, w)
-            attention_map2 = attention_maps[:, 1].view(n, 1, h, w)
+    def forward(self, x, y=None, shape=None):
+        n,_,h,w = x.shape
+        # transform student features
+        x = self.conv1(x)
+        if self.att_conv is not None:
+            # upsample residual features
+            y = F.interpolate(y, (shape,shape), mode="nearest")
+            # fusion
+            z = torch.cat([x, y], dim=1)
+            z = self.att_conv(z)
+            x = (x * z[:,0].view(n,1,h,w) + y * z[:,1].view(n,1,h,w))
+        # output 
+        y = self.conv2(x)
+        return y, x
 
-            residual_output = student_feature * attention_map1 \
-                + prev_abf_output * attention_map2
-
-        # the output of the abf is obtained after the residual
-        # output is convolved to have `out_channels` channels
-        abf_output = self.conv_to_out_channel(residual_output)
-
-        return abf_output, residual_output
-
-
-########## Residual Learning Framework ##########
-
-class RLF(nn.Module):
-    def __init__(self, student, abf_to_use):
-        super(RLF, self).__init__()
-
+class ReviewKD(nn.Module):
+    def __init__(
+        self, student, in_channels, out_channels, mid_channel
+    ):
+        super(ReviewKD, self).__init__()
+        self.shapes = [1,7,14,28,56]
         self.student = student
 
-        in_channels = [32, 64, 128, 256, 256, 256]
-        out_channels = [32, 64, 128, 256, 256, 256]
-        # in_channels = [16, 32, 64, 64]
-        # out_channels = [16, 32, 64, 64]
-
-        self.shapes = [1, 8, 16, 32, 32]
-
-        ABFs = nn.ModuleList()
+        abfs = nn.ModuleList()
 
         for idx, in_channel in enumerate(in_channels):
-            ABFs.append(abf_to_use(in_channel, out_channels[idx]))
+            abfs.append(ABF(in_channel, mid_channel, out_channels[idx], idx < len(in_channels)-1))
 
-        self.ABFs = ABFs[::-1]
+        self.abfs = abfs[::-1]
 
-    def forward(self, x):
-        student_features = self.student(x, is_feat=True)
-
-        student_preds = student_features[1]
-        student_features = student_features[0][::-1]
-
+    def forward(self, x, features):
+        # get student feature (encoder, decoder, clstm)
+        student_features = feature_extraction.FE_DCCRN(self.student).extract_feature_maps(x,features)
+        
+        #out spec in dccrn -> student predict
+        prev_logit = self.student(x)
+        logit = torch.cat([prev_logit[2], prev_logit[3]], 1)
+        x = student_features[0][::-1]
         results = []
+        out_features, res_features = self.abfs[0](x[0])
+        results.append(out_features)
+        for features, abf, shape in zip(x[1:], self.abfs[1:], self.shapes[1:]):
+            out_features, res_features = abf(features, res_features, shape)
+            results.insert(0, out_features)
+        student_features.clear()
+        return results, logit
+    
 
-        abf_output, residual_output = self.ABFs[0](
-            student_features[0], None, self.shapes[0])
-
-        results.append(abf_output)
-
-        for features, abf, shape in zip(student_features[1:], self.ABFs[1:], self.shapes[1:]):
-            # here we use a recursive technique to obtain all the ABF
-            # outputs and store them in a list
-            abf_output, residual_output = abf(features, residual_output, shape)
-            results.insert(0, abf_output)
-
-        return results, student_preds
+def build_review_kd(student):
+    in_channels = [32, 64, 128, 256, 256, 256]
+    out_channels = [32, 64, 128, 256, 256, 256]
+    mid_channel = 256
+    
+    model = ReviewKD(student, in_channels, out_channels, mid_channel)
+    return model
