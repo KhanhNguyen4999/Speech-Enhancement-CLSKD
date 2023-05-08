@@ -10,6 +10,8 @@ import torchmetrics
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from asteroid.data import DNSDataset
 from DCCRN import DCCRN
+from dataloader import create_dataloader
+
 
 from framework import ABF, MultiResolutionSTFTLoss, SPKDLoss, build_review_kd, ReviewKD
 import feature_extraction
@@ -19,14 +21,12 @@ import config as cfg
 CUDA_LAUNCH_BLOCKING=1
 
 class KnowledgeDistillation(pl.LightningModule):
-    def __init__(self, teacher, student, RLF, feature_fusion, sftf_loss, spkd_loss, cfg):
+    def __init__(self, teacher, student, sftf_loss, spkd_loss, cfg):
         super().__init__()
-        self.save_hyperparameters()
-
         #load teacher (pre-trained)
         self.teacher = teacher
         self.teacher_weight = torch.load(cfg.teacher_weight_path)
-        self.teacher.load_state_dict(self.teacher_weight)
+        #self.teacher.load_state_dict(self.teacher_weight)
         #freeze teacher
         for paras in self.teacher.parameters():
             paras.requires_grad = False
@@ -36,30 +36,36 @@ class KnowledgeDistillation(pl.LightningModule):
 
         #SPKD loss
         self.spkd_loss = spkd_loss
-        #featuer fusion
-        self.abf = feature_fusion
 
-        #MR SFTF loss
-        self.base_loss = sftf_loss[1]
+        #base loss - MRSFTF loss
+        self.base_loss = sftf_loss
         self.student_review_kd = build_review_kd(self.student)
         self.kd_loss_weight = cfg.kd_loss_weight
 
 
     def forward(self, x):
-        return self.rlf(x)
+        return self.student_review_kd(x)
     
     def training_step(self, batch, batch_idx):
         X, y = batch
         X, y = X.cuda(), y.cuda()
 
         losses = {"kd_loss": 0, "base_loss": 0}
-        
-        feature_maps = {'encoder':0,'decoder':0,'CLSTM_real':0,'CLSTM_img':0}
-        for ft_map in feature_maps:
-            # getting student and teacher features
-            student_features, student_preds = self.student_review_kd(X, ft_map)
 
-            teacher_features = feature_extraction.FE_DCCRN(teacher).extract_feature_maps(X, ft_map)
+        # getting student features
+        student_features, student_preds = self.student_review_kd(X, ft_map)
+        teacher_features = feature_extraction.FE_DCCRN(teacher).extract_feature_maps(X, ft_map)
+
+        student_features_encoder, student_preds_encoder = self.student_review_kd(X)
+        student_features_lstm, student_preds_lstm = self.student(student_features_encoder)
+        student_features_decoder, student_preds_lstm = self.student(student_features_lstm)
+
+        # getting teacher featrues
+        
+        feature_maps = {'encoder':0,'decoder':0}
+        for ft_map in feature_maps:
+            
+            
 
             # calculating review kd loss
             for sf, tf in zip(student_features, teacher_features):
@@ -74,18 +80,23 @@ class KnowledgeDistillation(pl.LightningModule):
             self.log('train_loss', loss)
             for key in losses:
                 self.log(f'train_{key}', losses[key])
-            teacher_features.clear()
-            #save loss:
-            feature_maps[ft_map] = loss
-        loss = sum(feature_maps.values())
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
+            #clear feature map
+            teacher_features.clear()
+
+            #save loss for each feature map:
+            feature_maps[ft_map] = loss
+
+        # calculating all losses -> encoder + decoder + lstm_real +lstm_img
+        loss = sum(feature_maps.values())
+
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return loss
     
     def validation_step(self, batch, batch_idx):
         # calculate running average of accuracy
         x, y = batch[0:2]
-        _, student_preds = self.rlf(x)
+        _, student_preds = self.student_review_kd(x)
         student_preds = torch.max(student_preds.data, 1)[1]
         acc = torchmetrics.functional.accuracy(student_preds, y)
 
@@ -94,7 +105,7 @@ class KnowledgeDistillation(pl.LightningModule):
     
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(
-            self.rlf.parameters(),
+            self.student_review_kd.parameters(),
             lr=cfg.lr,
             momentum=0.9,
             nesterov=True,
@@ -103,22 +114,24 @@ class KnowledgeDistillation(pl.LightningModule):
         return optimizer
     
     def train_dataloader(self):
-        train_dataset = DNSDataset("/root/NTH_student/asteroid/egs/dns_challenge/baseline/data")
-        train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                                batch_size=cfg.batch,  # max 3696 * snr types
-                                                shuffle=True,
-                                                num_workers=4,
-                                                pin_memory=True,
-                                                drop_last=True,
-                                                sampler=None)
+        train_dataset = DNSDataset("/root/NTH_student/test_loader")
+        # train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+        #                                         batch_size=cfg.batch,  # max 3696 * snr types
+        #                                         shuffle=True,
+        #                                         num_workers=4,
+        #                                         pin_memory=True,
+        #                                         drop_last=True,
+        #                                         sampler=None)
+        train_loader = create_dataloader(mode='train',dataset=train_dataset)
         return train_loader
     
     def val_dataloader(self):
-        val_dataset = DNSDataset("/root/NTH_student/asteroid/egs/dns_challenge/baseline/data")
-        val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
-                                                batch_size=cfg.batch, 
-                                                shuffle=False, 
-                                                num_workers=4)
+        val_dataset = DNSDataset("/root/NTH_student/test_loader")
+        # val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
+        #                                         batch_size=cfg.batch, 
+        #                                         shuffle=False, 
+        #                                         num_workers=4)
+        val_loader = create_dataloader(mode='valid',dataset=val_dataset)
         return val_loader
 
 
@@ -132,13 +145,11 @@ student = DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clst
                   kernel_num=cfg.kernel_num)
 
 # initialize trainer
-trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[1])
+trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[0])
 
 # initialize knowledge distillation module
 kd_module = KnowledgeDistillation(teacher, 
-                                  student, 
-                                  RLF=ReviewKD, 
-                                  feature_fusion=ABF, 
+                                  student,                                              
                                   sftf_loss=MultiResolutionSTFTLoss, 
                                   spkd_loss=SPKDLoss,
                                   cfg=cfg)

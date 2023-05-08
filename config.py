@@ -6,7 +6,7 @@ Configuration for program
 teacher = 'DCCRN'
 student = 'DCCRN'
 dataset = 'dns_challenge'
-teacher_weight_path = f'./pretrained/chkpt_1.pt'
+teacher_weight_path = f'./Speech_Enhancement_new/knowledge_distillation_CLSKD/pretrained/chkpt_1.pt'
 lr = 0.1
 lr_decay_steps = [12, 17]
 lr_decay_rate = 0.1,
