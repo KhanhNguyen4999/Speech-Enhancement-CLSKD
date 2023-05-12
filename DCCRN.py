@@ -234,7 +234,10 @@ class DCCRN(nn.Module):
         out_wav = torch.squeeze(out_wav, 1)
         # out_wav = torch.tanh(out_wav)
         out_wav = torch.clamp_(out_wav, -1, 1)
-        return mask_real, mask_imag, real, imag, out_wav  # out_spec, out_wav
+
+        if is_feat == True: return out_spec
+        else:
+            return mask_real, mask_imag, real, imag, out_wav  # out_spec, out_wav
 
     def get_params(self, weight_decay=0.0):
         # add L2 penalty

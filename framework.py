@@ -194,58 +194,159 @@ class ABF(nn.Module):
         nn.init.kaiming_uniform_(self.conv1[0].weight, a=1)  # pyre-ignore
         nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)  # pyre-ignore
 
-    def forward(self, x, y=None, shape=None):
+    def forward(self, x, y=None, shape=None, out_shape=None):
         n,_,h,w = x.shape
         # transform student features
         x = self.conv1(x)
         if self.att_conv is not None:
             # upsample residual features
-            y = F.interpolate(y, (shape,shape), mode="nearest")
+            y = F.interpolate(y, (shape,shape+479), mode="nearest")
             # fusion
             z = torch.cat([x, y], dim=1)
             z = self.att_conv(z)
             x = (x * z[:,0].view(n,1,h,w) + y * z[:,1].view(n,1,h,w))
         # output 
+        if x.shape[-1] != out_shape:
+            x = F.interpolate(x, (out_shape, out_shape), mode="nearest")
         y = self.conv2(x)
         return y, x
 
 class ReviewKD(nn.Module):
     def __init__(
-        self, student, in_channels, out_channels, mid_channel
-    ):
+        self, in_channels, out_channels, shapes, out_shapes, feature_maps, ft_type
+    ):  
         super(ReviewKD, self).__init__()
-        self.shapes = [1,7,14,28,56]
-        self.student = student
+        self.shapes = shapes
+        self.out_shapes = shapes if out_shapes is None else out_shapes
+        self.feature_maps = feature_maps
+        self.ft_type = ft_type
 
         abfs = nn.ModuleList()
 
+        mid_channel = min(512, in_channels[-1])
         for idx, in_channel in enumerate(in_channels):
             abfs.append(ABF(in_channel, mid_channel, out_channels[idx], idx < len(in_channels)-1))
-
         self.abfs = abfs[::-1]
-
-    def forward(self, x, features):
-        # get student feature (encoder, decoder, clstm)
-        student_features = feature_extraction.FE_DCCRN(self.student).extract_feature_maps(x,features)
         
-        #out spec in dccrn -> student predict
-        prev_logit = self.student(x)
-        logit = torch.cat([prev_logit[2], prev_logit[3]], 1)
-        x = student_features[0][::-1]
-        results = []
-        out_features, res_features = self.abfs[0](x[0])
-        results.append(out_features)
-        for features, abf, shape in zip(x[1:], self.abfs[1:], self.shapes[1:]):
-            out_features, res_features = abf(features, res_features, shape)
-            results.insert(0, out_features)
-        student_features.clear()
-        return results, logit
+
+    def forward(self, x):
+        if self.ft_type == 'encoder':
+            x = self.feature_maps #encoder
+            results = []
+            out_features, res_features = self.abfs[0](x, out_shape=self.out_shapes[0])
+            results.append(out_features)
+            for abf, shape, out_shape in zip(self.abfs[1:], self.shapes[1:], self.out_shapes[1:]):
+                out_features, res_features = abf(x, res_features, shape, out_shape)
+                results.insert(0, out_features)
+
+        elif self.ft_type == 'decoder':
+            x = self.feature_maps #decoder
+            results = []
+            out_features, res_features = self.abfs[0](x, out_shape=self.out_shapes[0])
+            results.append(out_features)
+            for abf, shape, out_shape in zip(self.abfs[:1], self.shapes[:1], self.out_shapes[:1]):
+                    out_features, res_features = abf(x, res_features, shape, out_shape)
+                    results.insert(0, out_features)
+        
+            
+
+        return results
     
 
-def build_review_kd(student):
-    in_channels = [32, 64, 128, 256, 256, 256]
-    out_channels = [32, 64, 128, 256, 256, 256]
-    mid_channel = 256
-    
-    model = ReviewKD(student, in_channels, out_channels, mid_channel)
+def build_review_kd(feature_maps, ft_type):
+    if ft_type == 'encoder':
+        in_channels = [32, 64, 128, 256, 256, 256]
+        out_channels = [32, 64, 128, 256, 256, 256]
+        shapes = [1,4,4]
+        out_shape = None
+
+    elif ft_type == 'decoder':
+        in_channels = [32, 64, 128, 256, 64, 2]
+        out_channels = [32, 64, 128, 256, 64, 2]
+        shapes = [1,4,4,4]
+        out_shape = None
+
+
+    model = ReviewKD(in_channels, out_channels, shapes, out_shape, feature_maps, ft_type)
     return model
+
+
+
+
+
+# class ABF(nn.Module):
+#     def __init__(self, in_channel, mid_channel, out_channel, fuse):
+#         super(ABF, self).__init__()
+#         self.conv1 = nn.Sequential(
+#             nn.Conv2d(in_channel, mid_channel, kernel_size=1, bias=False),
+#             nn.BatchNorm2d(mid_channel),
+#         )
+#         self.conv2 = nn.Sequential(
+#             nn.Conv2d(mid_channel, out_channel,kernel_size=3,stride=1,padding=1,bias=False),
+#             nn.BatchNorm2d(out_channel),
+#         )
+#         if fuse:
+#             self.att_conv = nn.Sequential(
+#                     nn.Conv2d(mid_channel*2, 2, kernel_size=1),
+#                     nn.Sigmoid(),
+#                 )
+#         else:
+#             self.att_conv = None
+#         nn.init.kaiming_uniform_(self.conv1[0].weight, a=1)  # pyre-ignore
+#         nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)  # pyre-ignore
+
+#     def forward(self, x, y=None, shape=None, out_shape=None):
+#         n,_,h,w = x.shape
+#         # transform student features
+#         x = self.conv1(x)
+#         if self.att_conv is not None:
+#             # upsample residual features
+#             y = F.interpolate(y, (shape,shape-1), mode="nearest")
+#             # fusion
+#             z = torch.cat([x, y], dim=1)
+#             z = self.att_conv(z)
+#             x = (x * z[:,0].view(n,1,h,w) + y * z[:,1].view(n,1,h,w))
+#         # output 
+#         if x.shape[-1] != out_shape:
+#             x = F.interpolate(x, (out_shape, out_shape), mode="nearest")
+#         y = self.conv2(x)
+#         return y, x
+
+# class ReviewKD(nn.Module):
+#     def __init__(
+#         self, student, in_channels, out_channels, shapes, out_shapes,
+#     ):  
+#         super(ReviewKD, self).__init__()
+#         self.student = student
+#         self.shapes = shapes
+#         self.out_shapes = shapes if out_shapes is None else out_shapes
+
+#         abfs = nn.ModuleList()
+
+#         mid_channel = min(512, in_channels[-1])
+#         for idx, in_channel in enumerate(in_channels):
+#             abfs.append(ABF(in_channel, mid_channel, out_channels[idx], idx < len(in_channels)-1))
+#         self.abfs = abfs[::-1]
+        
+
+#     def forward(self, x):
+#         student_features = self.student(x,is_feat=True)
+#         logit = student_features[1]
+#         x = student_features[0][::-1]
+#         results = []
+#         out_features, res_features = self.abfs[0](x[0], out_shape=self.out_shapes[0])
+#         results.append(out_features)
+#         for features, abf, shape, out_shape in zip(x[1:], self.abfs[1:], self.shapes[1:], self.out_shapes[1:]):
+#             out_features, res_features = abf(features, res_features, shape, out_shape)
+#             results.insert(0, out_features)
+
+#         return results, logit
+    
+
+# def build_review_kd(student):
+#     in_channels = [32, 64, 128, 256, 256, 256]
+#     out_channels = [32, 64, 128, 256, 256, 256]
+#     mid_channel = 256
+    
+#     model = ReviewKD(student, in_channels, out_channels, mid_channel)
+#     return model

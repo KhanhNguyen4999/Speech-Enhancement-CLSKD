@@ -8,7 +8,7 @@ import matplotlib.pylab as plt
 from pesq import pesq
 from pystoi import stoi
 
-
+import config as cfg
 ############################################################################
 #                         for convolutional STFT                           #
 ############################################################################
@@ -587,7 +587,7 @@ def get_statistics_inp(inp):
 def cal_pesq(dirty_wavs, clean_wavs):
     pesq_scores = []
     for i in range(len(dirty_wavs)):
-        pesq_score = pesq(cfg.FS, clean_wavs[i], dirty_wavs[i], "wb")
+        pesq_score = pesq(cfg.fs, clean_wavs[i], dirty_wavs[i], "wb")
         pesq_scores.append(pesq_score)
     return pesq_scores
 
@@ -595,7 +595,7 @@ def cal_pesq(dirty_wavs, clean_wavs):
 def cal_stoi(dirty_wavs, clean_wavs):
     stoi_scores = []
     for i in range(len(dirty_wavs)):
-        stoi_score = stoi(clean_wavs[i], dirty_wavs[i], cfg.FS, extended=False)
+        stoi_score = stoi(clean_wavs[i], dirty_wavs[i], cfg.fs, extended=False)
         stoi_scores.append(stoi_score)
     return stoi_scores
 

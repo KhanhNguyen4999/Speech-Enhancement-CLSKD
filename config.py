@@ -46,6 +46,7 @@ kernel_num = [32, 64, 128, 256, 256, 256]  # DCCRN
 loss_mode = 'SDR+PMSQE'
 
 # hyperparameters for model train
-max_epochs = 100
+max_epochs = 5
 learning_rate = 0.0005
-batch = 8
+batch = 64
+

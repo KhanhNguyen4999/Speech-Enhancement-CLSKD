@@ -1,6 +1,6 @@
 import torch
 
-class FE_DCCRN():
+class DCCRN():
     def __init__(self, model):
         # Get input size from model
         self.model = model
@@ -33,7 +33,7 @@ class FE_DCCRN():
         """
         self.feature_maps.append(output)
 
-    def extract_feature_maps(self, input, features):
+    def extract_feature_maps(self, input):
         """
         Extract feature maps from model's encoder, decoder, and enhance modules
         """
@@ -44,14 +44,12 @@ class FE_DCCRN():
         with torch.no_grad():
             self.model(input)
         
-        if features == 'encoder':
-            self.feature_maps = self.feature_maps[0]
-        elif features == 'decoder':
-            self.feature_mapss = self.feature_maps[2]
-        elif features == 'CLSTM_real':
-            self.feature_maps = self.feature_maps[1][0]
-        elif features == 'CLSTM_img':
-            self.feature_maps = self.feature_maps[1][1]
+        # if features == 'encoder':
+        #     self.feature_maps = self.feature_maps[0]
+        # elif features == 'decoder':
+        #     self.feature_mapss = self.feature_maps[2]
+        # elif features == 'CLSTM':
+        #     self.feature_maps = self.feature_maps[1]
 
         return self.feature_maps
     
