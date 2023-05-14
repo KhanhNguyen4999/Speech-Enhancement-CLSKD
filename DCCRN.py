@@ -235,7 +235,7 @@ class DCCRN(nn.Module):
         # out_wav = torch.tanh(out_wav)
         out_wav = torch.clamp_(out_wav, -1, 1)
 
-        if is_feat == True: return out_spec
+        if is_feat == True: return out_wav
         else:
             return mask_real, mask_imag, real, imag, out_wav  # out_spec, out_wav
 

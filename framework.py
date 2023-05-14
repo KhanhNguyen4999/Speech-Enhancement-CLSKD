@@ -148,10 +148,10 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
 ########## Similarity-Preserving Knowledge Distillation ##########
 
 class SPKDLoss(nn.Module):
-    def __init__(self, student_output_path, teacher_output_path, reduction, **kwargs):
+    def __init__(self, student_output, teacher_output, reduction, **kwargs):
         super().__init__()
-        self.student_output_path = student_output_path
-        self.teacher_output_path = teacher_output_path
+        self.student_outputs = student_output
+        self.teacher_outputs = teacher_output
         self.reduction = reduction
 
     def matmul_and_normalize(self, z):
@@ -163,11 +163,11 @@ class SPKDLoss(nn.Module):
         g_s = self.matmul_and_normalize(student_outputs)
         return torch.norm(g_t - g_s) ** 2
 
-    def forward(self, student_io_dict, teacher_io_dict, *args, **kwargs):
-        teacher_outputs = teacher_io_dict[self.teacher_output_path]['output']
-        student_outputs = student_io_dict[self.student_output_path]['output']
-        batch_size = teacher_outputs.shape[0]
-        spkd_losses = self.compute_spkd_loss(teacher_outputs, student_outputs)
+    def forward(self, *args, **kwargs):
+        # teacher_outputs = teacher_io_dict[self.teacher_output_path]['output']
+        # student_outputs = student_io_dict[self.student_output_path]['output']
+        batch_size = self.teacher_outputs.shape[0]
+        spkd_losses = self.compute_spkd_loss(self.teacher_outputs, self.student_outputs)
         spkd_loss = spkd_losses.sum()
         return spkd_loss / (batch_size ** 2) if self.reduction == 'batchmean' else spkd_loss
 
@@ -193,6 +193,13 @@ class ABF(nn.Module):
             self.att_conv = None
         nn.init.kaiming_uniform_(self.conv1[0].weight, a=1)  # pyre-ignore
         nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)  # pyre-ignore
+
+        # Move the model to the GPU
+        self.cuda()
+
+        # Convert the weights to torch.cuda.FloatTensor
+        self.conv1[0].weight = nn.Parameter(self.conv1[0].weight.cuda())
+        self.conv2[0].weight = nn.Parameter(self.conv2[0].weight.cuda())
 
     def forward(self, x, y=None, shape=None, out_shape=None):
         n,_,h,w = x.shape
@@ -231,7 +238,7 @@ class ReviewKD(nn.Module):
 
     def forward(self, x):
         if self.ft_type == 'encoder':
-            x = self.feature_maps #encoder
+            x = self.feature_maps
             results = []
             out_features, res_features = self.abfs[0](x, out_shape=self.out_shapes[0])
             results.append(out_features)
@@ -240,15 +247,13 @@ class ReviewKD(nn.Module):
                 results.insert(0, out_features)
 
         elif self.ft_type == 'decoder':
-            x = self.feature_maps #decoder
+            x = self.feature_maps
             results = []
             out_features, res_features = self.abfs[0](x, out_shape=self.out_shapes[0])
             results.append(out_features)
             for abf, shape, out_shape in zip(self.abfs[:1], self.shapes[:1], self.out_shapes[:1]):
                     out_features, res_features = abf(x, res_features, shape, out_shape)
                     results.insert(0, out_features)
-        
-            
 
         return results
     
@@ -262,9 +267,9 @@ def build_review_kd(feature_maps, ft_type):
 
     elif ft_type == 'decoder':
         in_channels = [32, 64, 128, 256, 64, 2]
-        out_channels = [32, 64, 128, 256, 64, 2]
-        shapes = [1,4,4,4]
-        out_shape = None
+        out_channels = [32, 64, 128, 256, 64, 256]
+        shapes = [1,4,4,4,4]
+        out_shape = [4,4,4,4,4]
 
 
     model = ReviewKD(in_channels, out_channels, shapes, out_shape, feature_maps, ft_type)

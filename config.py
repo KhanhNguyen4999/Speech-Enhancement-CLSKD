@@ -48,5 +48,5 @@ loss_mode = 'SDR+PMSQE'
 # hyperparameters for model train
 max_epochs = 5
 learning_rate = 0.0005
-batch = 64
+batch = 4
 

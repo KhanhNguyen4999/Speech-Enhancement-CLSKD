@@ -16,7 +16,7 @@ def create_dataloader(mode,dataset):
             dataset=dataset,
             batch_size=cfg.batch,  # max 3696 * snr types
             shuffle=True,
-            num_workers=0,
+            num_workers=48,
             pin_memory=True,
             drop_last=True,
             sampler=None
@@ -24,7 +24,7 @@ def create_dataloader(mode,dataset):
     elif mode == 'valid':
         return DataLoader(
             dataset=dataset,
-            batch_size=cfg.batch, shuffle=False, num_workers=0
+            batch_size=cfg.batch, shuffle=False, num_workers=48
         )    # max 1152
 
 def create_dataloader_for_test(mode, type, snr):
