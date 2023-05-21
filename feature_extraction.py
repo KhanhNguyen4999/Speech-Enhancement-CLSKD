@@ -4,8 +4,6 @@ class DCCRN():
     def __init__(self, model):
         # Get input size from model
         self.model = model
-        #self.input_size = self.model.stft.weight.size(1)
-        #self.input = torch.randn(batch_szie, self.input_size)
         
         #feature maps contained encoder, decoder, LSTM 
         self.feature_maps = []
@@ -35,6 +33,9 @@ class DCCRN():
         self.feature_maps.append(output)
 
     def remove_hook(self):
+        """"
+        Remove hook register to prevent memory leaking
+        """
         self.handle_encoder.remove()
         self.handle_decoder.remove()
         self.handle_clstm.remove()
@@ -49,13 +50,6 @@ class DCCRN():
         # Pass input through the model to extract feature maps
         with torch.no_grad():
             self.model(input)
-        
-        # if features == 'encoder':
-        #     self.feature_maps = self.feature_maps[0]
-        # elif features == 'decoder':
-        #     self.feature_mapss = self.feature_maps[2]
-        # elif features == 'CLSTM':
-        #     self.feature_maps = self.feature_maps[1]
     
         return self.feature_maps
     

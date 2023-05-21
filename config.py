@@ -7,24 +7,16 @@ teacher = 'DCCRN'
 student = 'DCCRN'
 dataset = 'dns_challenge'
 teacher_weight_path = f'/root/NTH_student/Speech_Enhancement_new/DCCRN-with-various-loss-functions/job/dccrn_20230515/chkpt_100.pt'
-lr = 0.1
 lr_decay_steps = [12, 17]
 lr_decay_rate = 0.1,
 weight_decay = 5e-4,
 
-
+########################### TEACHER ###########################
 # model
 mode = 'DCCRN'  # DCUNET / DCCRN
 info = 'MODEL INFORMATION : IT IS USED FOR FILE NAME'
 
 test = True
-
-# path
-job_dir = './job/'
-logs_dir = './logs/'
-chkpt_path = None
-# chkpt_model = 'FILE NAME THAT YOU WANT TO LOAD'
-# chkpt_path = job_dir + chkpt_model + 'chkpt_88.pt'
 
 # model information
 fs = 16000
@@ -45,7 +37,9 @@ kernel_num = [32, 64, 128, 256, 256, 256]  # DCCRN
 loss_mode = 'SDR+PMSQE'
 
 # hyperparameters for model train
-max_epochs = 5
+max_epochs = 20
 learning_rate = 0.0005
-batch = 64
+batch = 128
 
+
+########################### STUDENT ###########################

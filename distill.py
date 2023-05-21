@@ -153,14 +153,14 @@ class KnowledgeDistillation(pl.LightningModule):
         return {"val_loss":val_loss, "val_pesq": avg_pesq, "val_stoi": avg_stoi}
     
     def configure_optimizers(self):
-        #optimizer = optim.Adam(self.student.parameters(), lr=cfg.lr, weight_decay=5e-4)
-        optimizer = torch.optim.SGD(
-            self.student.parameters(),
-            lr=cfg.lr,
-            nesterov=True,
-            momentum=0.9,
-            weight_decay=5e-4,
-        )
+        optimizer = optim.Adam(self.student.parameters(), lr=0.001, weight_decay=5e-4)
+        # optimizer = torch.optim.SGD(
+        #     self.student.parameters(),
+        #     lr=cfg.learning_rate,
+        #     nesterov=True,
+        #     momentum=0.9,
+        #     weight_decay=5e-4,
+        # )
         return optimizer
     
     def train_dataloader(self):
