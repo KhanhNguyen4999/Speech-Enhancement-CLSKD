@@ -2,3 +2,5 @@ datasets/
 *.zip
 .ipynb_checkpoints/
 _pycache_
+checkpoint
+lightning_logs
