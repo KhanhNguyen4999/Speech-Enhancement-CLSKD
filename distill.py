@@ -2,14 +2,12 @@ from typing import Any
 import numpy as np
 import os 
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS
+from pytorch_lightning.callbacks import ModelCheckpoint
 import torch
-import gc
 import torch.nn as nn
 import torch.optim as optim
-import torchvision
 import torchvision.transforms as transforms
 import pytorch_lightning as pl
-import torchmetrics
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from asteroid.data import DNSDataset
 from DCCRN import DCCRN
@@ -22,7 +20,6 @@ import feature_extraction
 import config as cfg
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "1"
-CUDA_LAUNCH_BLOCKING=1
 
 class KnowledgeDistillation(pl.LightningModule):
     def __init__(self, teacher, student, sftf_loss, spkd_loss, cfg):
@@ -67,7 +64,7 @@ class KnowledgeDistillation(pl.LightningModule):
         model_decoder = build_review_kd(student_decoder,'decoder')
         student_features_decoder = model_decoder(X)
 
-        #getting teacher features
+        # getting teacher features
         teacher_extraction = feature_extraction.DCCRN(self.teacher)
         teacher_features = teacher_extraction.extract_feature_maps(X)
         teacher_encoder, teacher_decoder, teacher_clstm_real, teacher_clstm_img = (teacher_features[0], 
@@ -107,35 +104,25 @@ class KnowledgeDistillation(pl.LightningModule):
         feature_maps_loss['decoder'] = loss
 
 
-
         ############## C-LSTM REAL loss ######################
-        losses = {"kd_loss": 0}
         # calculating review kd loss
-        
         kd_loss = self.spkd_loss(student_clstm_real, teacher_clstm_real,reduction=None)
-        losses['kd_loss'] = kd_loss()
-        loss = losses['kd_loss']
-        #save loss for each feature map:
-        feature_maps_loss['clstm_real'] = loss
-
+        feature_maps_loss['clstm_real'] = kd_loss()
+        
 
         ############## C-LSTM IMAGE loss ######################
-        losses = {"kd_loss": 0}
         # calculating review kd loss
         kd_loss = self.spkd_loss(student_clstm_img, teacher_clstm_img,reduction=None)
-        losses['kd_loss'] = kd_loss()
-        loss = losses['kd_loss']
-        #save loss for each feature map:
-        feature_maps_loss['clstm_img'] = loss
+        feature_maps_loss['clstm_img'] = kd_loss()
         
 
         ############### Calculating all losses [Encoder + Decoder + C-Lstm_real + C-Lstm_img] ##################
         loss = base_loss + sum(feature_maps_loss.values())
 
-        # logging
-        self.log("train_loss", loss.detach(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        # logging training loss
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
-        # clear memory
+        # clear memory for register hook
         teacher_extraction.remove_hook()
         student_extraction.remove_hook()
 
@@ -144,7 +131,9 @@ class KnowledgeDistillation(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         # calculate running average of accuracy
         x, y,_ = batch
-        student_preds = self.student(x, is_feat=True)
+        _, _, real_spec, img_spec, student_preds = self.student(x)
+        val_loss = self.student.loss(student_preds, y.float(), real_spec, img_spec)
+
         estimated_wavs = student_preds.cpu().detach().numpy()
         clean_wavs = y.cpu().detach().numpy()
 
@@ -158,40 +147,29 @@ class KnowledgeDistillation(pl.LightningModule):
         avg_pesq = sum(pesq[0]) / len(x)
         avg_stoi = sum(stoi[0]) / len(x)
 
-        self.log_dict({"val_pesq": avg_pesq, "val_stoi": avg_stoi}, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict({"val_loss":val_loss, "val_pesq": avg_pesq, "val_stoi": avg_stoi}, on_step=True, on_epoch=True, prog_bar=True, logger=True)
        
         #monitor memory
-        return {"val_pesq": avg_pesq, "val_stoi": avg_stoi}
+        return {"val_loss":val_loss, "val_pesq": avg_pesq, "val_stoi": avg_stoi}
     
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.student.parameters(), lr=cfg.lr, weight_decay=5e-4)
-        # optimizer = torch.optim.SGD(
-        #     self.student.parameters(),
-        #     lr=cfg.lr,
-        #     nesterov=True,
-        #     momentum=0.9,
-        #     weight_decay=5e-4,
-        # )
+        #optimizer = optim.Adam(self.student.parameters(), lr=cfg.lr, weight_decay=5e-4)
+        optimizer = torch.optim.SGD(
+            self.student.parameters(),
+            lr=cfg.lr,
+            nesterov=True,
+            momentum=0.9,
+            weight_decay=5e-4,
+        )
         return optimizer
     
     def train_dataloader(self):
         train_dataset = DNSDataset("/root/NTH_student/train_loader")
-        # train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-        #                                         batch_size=cfg.batch,  # max 3696 * snr types
-        #                                         shuffle=True,
-        #                                         num_workers=0,
-        #                                         pin_memory=True,
-        #                                         drop_last=True,
-        #                                         sampler=None)
         train_loader = create_dataloader(mode='train',dataset=train_dataset)
         return train_loader
     
     def val_dataloader(self):
         val_dataset = DNSDataset("/root/NTH_student/test_loader")
-        # val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
-        #                                         batch_size=cfg.batch, 
-        #                                         shuffle=False, 
-        #                                         num_workers=0)
         val_loader = create_dataloader(mode='valid',dataset=val_dataset)
         return val_loader
 
@@ -206,12 +184,20 @@ def main():
     student =  DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
                     kernel_num=cfg.kernel_num)
 
+    # initalize checkpoint
+    checkpoint_callback = ModelCheckpoint(
+                        dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
+                        filename='model-{epoch:02d}-{val_loss:.2f}',
+                        save_top_k=10,
+                        monitor='val_loss')
+
+
     # initialize trainer
-    trainer = pl.Trainer(max_epochs=cfg.batch, 
+    trainer = pl.Trainer(max_epochs=cfg.max_epochs, 
                         accelerator="gpu", 
-                        devices=[1],
-                        log_every_n_steps=5,
-                        default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD')
+                        devices=[0],
+                        default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
+                        callbacks=[checkpoint_callback])
 
     # initialize knowledge distillation module
     kd_module = KnowledgeDistillation(teacher, 

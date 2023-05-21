@@ -352,8 +352,8 @@ class DCCRN(nn.Module):
 
             ref_wav = labels.reshape(-1, 3, 16000)
             est_wav = inputs.reshape(-1, 3, 16000)
-            #ref_wav = ref_wav.cpu()
-            #est_wav = est_wav.cpu()
+            ref_wav = ref_wav.cpu()
+            est_wav = est_wav.cpu()
 
             ref_spec = transforms.mag(pmsqe_stft(ref_wav))
             est_spec = transforms.mag(pmsqe_stft(est_wav))
@@ -391,8 +391,8 @@ class DCCRN(nn.Module):
         elif loss_mode == 'SI-SNR+PMSQE':
             ref_wav = labels.reshape(-1, 3, 16000)
             est_wav = inputs.reshape(-1, 3, 16000)
-            #ref_wav = ref_wav.cpu()
-            #est_wav = est_wav.cpu()
+            ref_wav = ref_wav.cpu()
+            est_wav = est_wav.cpu()
 
             ref_spec = transforms.mag(pmsqe_stft(ref_wav))
             est_spec = transforms.mag(pmsqe_stft(est_wav))
