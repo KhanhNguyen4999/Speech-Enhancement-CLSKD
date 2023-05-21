@@ -158,7 +158,7 @@ class KnowledgeDistillation(pl.LightningModule):
         avg_pesq = sum(pesq[0]) / len(x)
         avg_stoi = sum(stoi[0]) / len(x)
 
-        self.log_dict({"val_pesq": avg_pesq, "val_stoi": avg_stoi}, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict({"val_pesq": avg_pesq, "val_stoi": avg_stoi}, on_step=True, on_epoch=True, prog_bar=True, logger=True)
        
         #monitor memory
         return {"val_pesq": avg_pesq, "val_stoi": avg_stoi}
