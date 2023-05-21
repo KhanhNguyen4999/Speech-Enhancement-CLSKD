@@ -6,12 +6,11 @@ Configuration for program
 teacher = 'DCCRN'
 student = 'DCCRN'
 dataset = 'dns_challenge'
-teacher_weight_path = f'./Speech_Enhancement_new/knowledge_distillation_CLSKD/pretrained/chkpt_1.pt'
+teacher_weight_path = f'/root/NTH_student/Speech_Enhancement_new/DCCRN-with-various-loss-functions/job/dccrn_20230515/chkpt_100.pt'
 lr = 0.1
 lr_decay_steps = [12, 17]
 lr_decay_rate = 0.1,
 weight_decay = 5e-4,
-kd_loss_weight = 0.6,
 
 
 # model
@@ -46,7 +45,7 @@ kernel_num = [32, 64, 128, 256, 256, 256]  # DCCRN
 loss_mode = 'SDR+PMSQE'
 
 # hyperparameters for model train
-max_epochs = 5
+max_epochs = 10
 learning_rate = 0.0005
-batch = 4
+batch = 64
 

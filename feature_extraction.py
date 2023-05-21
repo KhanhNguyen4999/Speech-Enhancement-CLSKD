@@ -11,15 +11,16 @@ class DCCRN():
         self.feature_maps = []
 
         # Register forward hooks for encoder, decoder, and enhance modules
-        self.model.encoder[-1].register_forward_hook(self.encoder_hook)
-        self.model.decoder[-1].register_forward_hook(self.decoder_hook)
-        self.model.enhance.register_forward_hook(self.enhance_hook)
+        self.handle_encoder = self.model.encoder[-1].register_forward_hook(self.encoder_hook)
+        self.handle_decoder = self.model.decoder[-1].register_forward_hook(self.decoder_hook)
+        self.handle_clstm = self.model.enhance.register_forward_hook(self.enhance_hook)
 
     def encoder_hook(self, module, input, output):
         """
         Append encoder feature map to the list of feature maps
         """
         self.feature_maps.append(output)
+        
 
     def decoder_hook(self, module, input, output):
         """
@@ -32,6 +33,11 @@ class DCCRN():
         Append enhance (LSTM) feature map to the list of feature maps
         """
         self.feature_maps.append(output)
+
+    def remove_hook(self):
+        self.handle_encoder.remove()
+        self.handle_decoder.remove()
+        self.handle_clstm.remove()
 
     def extract_feature_maps(self, input):
         """
@@ -50,6 +56,6 @@ class DCCRN():
         #     self.feature_mapss = self.feature_maps[2]
         # elif features == 'CLSTM':
         #     self.feature_maps = self.feature_maps[1]
-
+    
         return self.feature_maps
     

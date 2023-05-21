@@ -1,3 +1,4 @@
 datasets/
 *.zip
 .ipynb_checkpoints/
+_pycache_

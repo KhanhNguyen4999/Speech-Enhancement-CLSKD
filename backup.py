@@ -10,7 +10,7 @@ import torchmetrics
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from torch.optim.lr_scheduler import StepLR
 
-batch_size = 32
+batch_size = 64
 
 class TeacherNet(nn.Module):
     def __init__(self):
@@ -107,7 +107,7 @@ teacher = TeacherNet()
 student = StudentNet()
 
 # initialize trainer
-trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[0])
+trainer = pl.Trainer(max_epochs=5, accelerator="gpu", devices=[1])
 
 # initialize knowledge distillation module
 kd_module = KnowledgeDistillation(teacher, student)
