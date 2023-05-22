@@ -172,41 +172,37 @@ class KnowledgeDistillation(pl.LightningModule):
         return val_loader
 
 
-def main(): 
-    #setup
-    torch.set_float32_matmul_precision('high')
 
-    # initialize models
-    teacher =  DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
-                    kernel_num=cfg.kernel_num)
-    student =  DCCRN(rnn_units=cfg.rnn_units_student, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
-                    kernel_num=cfg.kernel_num_student)
+#setup
+torch.set_float32_matmul_precision('high')
 
-    # initalize checkpoint
-    checkpoint_callback = ModelCheckpoint(
-                        dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
-                        filename='model-{epoch:02d}-{val_loss:.2f}',
-                        save_top_k=10,
-                        monitor='val_loss')
+# initialize models
+teacher =  DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
+                kernel_num=cfg.kernel_num)
+student =  DCCRN(rnn_units=cfg.rnn_units_student, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
+                kernel_num=cfg.kernel_num_student)
 
-
-    # initialize trainer
-    trainer = pl.Trainer(max_epochs=cfg.max_epochs, 
-                        accelerator="gpu", 
-                        devices=[2],
-                        default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
-                        callbacks=[checkpoint_callback])
-
-    # initialize knowledge distillation module
-    kd_module = KnowledgeDistillation(teacher, 
-                                    student,                                              
-                                    sftf_loss=MultiResolutionSTFTLoss, 
-                                    spkd_loss=SPKDLoss,
-                                    cfg=cfg)
-
-    # train the student network using knowledge distillation
-    trainer.fit(kd_module)
+# initalize checkpoint
+checkpoint_callback = ModelCheckpoint(
+                    dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
+                    filename='model-{epoch:02d}-{val_loss:.2f}',
+                    save_top_k=10,
+                    monitor='val_loss')
 
 
-if __name__== "__main__":
-    main()
+# initialize trainer
+trainer = pl.Trainer(max_epochs=cfg.max_epochs, 
+                    accelerator="gpu", 
+                    devices=[2],
+                    default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
+                    callbacks=[checkpoint_callback])
+
+# initialize knowledge distillation module
+kd_module = KnowledgeDistillation(teacher, 
+                                student,                                              
+                                sftf_loss=MultiResolutionSTFTLoss, 
+                                spkd_loss=SPKDLoss,
+                                cfg=cfg)
+
+# train the student network using knowledge distillation
+trainer.fit(kd_module)
