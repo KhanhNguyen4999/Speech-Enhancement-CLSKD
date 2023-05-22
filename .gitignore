@@ -4,3 +4,4 @@ datasets/
 _pycache_
 checkpoint
 lightning_logs
+*.ipynb

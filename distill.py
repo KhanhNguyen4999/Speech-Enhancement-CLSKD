@@ -49,14 +49,14 @@ class KnowledgeDistillation(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         X, y,_ = batch
-
+       
         # getting student features
         student_extraction = feature_extraction.DCCRN(self.student)
         student_features = student_extraction.extract_feature_maps(X)
-        student_encoder,student_decoder, student_clstm_real,student_clstm_img = (student_features[0],
-                                                                                 student_features[2],
-                                                                                 student_features[1][0],
-                                                                                 student_features[1][1])
+        student_encoder,student_decoder, student_clstm_real,student_clstm_img = (student_features["encoder"],
+                                                                                 student_features["decoder"],
+                                                                                 student_features["clstm"][0][0],
+                                                                                 student_features["clstm"][0][1])
         
         model_encoder = build_review_kd(student_encoder,'encoder')
         student_features_encoder = model_encoder(X)
@@ -67,10 +67,10 @@ class KnowledgeDistillation(pl.LightningModule):
         # getting teacher features
         teacher_extraction = feature_extraction.DCCRN(self.teacher)
         teacher_features = teacher_extraction.extract_feature_maps(X)
-        teacher_encoder, teacher_decoder, teacher_clstm_real, teacher_clstm_img = (teacher_features[0], 
-                                                                                   teacher_features[2], 
-                                                                                   teacher_features[1][0], 
-                                                                                   teacher_features[1][1])
+        teacher_encoder, teacher_decoder, teacher_clstm_real, teacher_clstm_img = (teacher_features["encoder"], 
+                                                                                   teacher_features["decoder"], 
+                                                                                   teacher_features["clstm"][0][0], 
+                                                                                   teacher_features["clstm"][0][1])
 
         
         # calculating based-loss (Multi-resolution STFT)
@@ -83,8 +83,7 @@ class KnowledgeDistillation(pl.LightningModule):
         ############## ENCODER loss ######################
         losses = {"kd_loss": 0}
         # calculating review kd loss
-        for sf in student_features_encoder:
-            tf = teacher_encoder
+        for sf, tf in zip(student_features_encoder,teacher_encoder):
             kd_loss = self.spkd_loss(sf, tf,'batchmean')
             losses['kd_loss'] += kd_loss()
         loss = losses['kd_loss']
@@ -95,8 +94,7 @@ class KnowledgeDistillation(pl.LightningModule):
         ############## DECODER loss ######################
         losses = {"kd_loss": 0}
         # calculating review kd loss
-        for sf in student_features_decoder:
-            tf = teacher_decoder
+        for sf, tf in zip(student_features_decoder,teacher_decoder):
             kd_loss = self.spkd_loss(sf, tf,'batchmean')
             losses['kd_loss'] += kd_loss()
         loss = losses['kd_loss']
@@ -153,7 +151,7 @@ class KnowledgeDistillation(pl.LightningModule):
         return {"val_loss":val_loss, "val_pesq": avg_pesq, "val_stoi": avg_stoi}
     
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.student.parameters(), lr=0.001, weight_decay=5e-4)
+        optimizer = optim.Adam(self.student.parameters(), lr=cfg.learning_rate, weight_decay=5e-4)
         # optimizer = torch.optim.SGD(
         #     self.student.parameters(),
         #     lr=cfg.learning_rate,
@@ -181,8 +179,8 @@ def main():
     # initialize models
     teacher =  DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
                     kernel_num=cfg.kernel_num)
-    student =  DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
-                    kernel_num=cfg.kernel_num)
+    student =  DCCRN(rnn_units=cfg.rnn_units_student, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
+                    kernel_num=cfg.kernel_num_student)
 
     # initalize checkpoint
     checkpoint_callback = ModelCheckpoint(
@@ -195,7 +193,7 @@ def main():
     # initialize trainer
     trainer = pl.Trainer(max_epochs=cfg.max_epochs, 
                         accelerator="gpu", 
-                        devices=[0],
+                        devices=[2],
                         default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
                         callbacks=[checkpoint_callback])
 

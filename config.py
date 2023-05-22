@@ -39,7 +39,10 @@ loss_mode = 'SDR+PMSQE'
 # hyperparameters for model train
 max_epochs = 20
 learning_rate = 0.0005
-batch = 128
+batch = 64
 
 
 ########################### STUDENT ###########################
+rnn_layers_student = 2
+rnn_units_student = 64
+kernel_num_student = [8, 16, 32, 64, 64, 64]  # DCCRN

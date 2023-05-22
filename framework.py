@@ -201,13 +201,16 @@ class ABF(nn.Module):
         self.conv1[0].weight = nn.Parameter(self.conv1[0].weight.cuda())
         self.conv2[0].weight = nn.Parameter(self.conv2[0].weight.cuda())
 
-    def forward(self, x, y=None, shape=None, out_shape=None):
+    def forward(self, x, y=None, shape=None, out_shape=None, feature_type=None):
         n,_,h,w = x.shape
         # transform student features
         x = self.conv1(x)
         if self.att_conv is not None:
             # upsample residual features
-            y = F.interpolate(y, (shape,shape+479), mode="nearest")
+            if feature_type == "encoder":
+                y = F.interpolate(y, (shape,483), mode="nearest")
+            elif feature_type == "decoder":
+                y = F.interpolate(y, (shape,484), mode="nearest")
             # fusion
             z = torch.cat([x, y], dim=1)
             z = self.att_conv(z)
@@ -238,21 +241,21 @@ class ReviewKD(nn.Module):
 
     def forward(self, x):
         if self.ft_type == 'encoder':
-            x = self.feature_maps
+            x = self.feature_maps[::-1]
             results = []
-            out_features, res_features = self.abfs[0](x, out_shape=self.out_shapes[0])
+            out_features, res_features = self.abfs[0](x[0], out_shape=self.out_shapes[0], feature_type=self.ft_type)
             results.append(out_features)
-            for abf, shape, out_shape in zip(self.abfs[1:], self.shapes[1:], self.out_shapes[1:]):
-                out_features, res_features = abf(x, res_features, shape, out_shape)
+            for feature, abf, shape, out_shape in zip(x[1:], self.abfs[1:], self.shapes[1:], self.out_shapes[1:]):
+                out_features, res_features = abf(feature, res_features, shape, out_shape,feature_type=self.ft_type)
                 results.insert(0, out_features)
 
         elif self.ft_type == 'decoder':
             x = self.feature_maps
             results = []
-            out_features, res_features = self.abfs[0](x, out_shape=self.out_shapes[0])
+            out_features, res_features = self.abfs[0](x[0], out_shape=self.out_shapes[0], feature_type=self.ft_type)
             results.append(out_features)
-            for abf, shape, out_shape in zip(self.abfs[:1], self.shapes[:1], self.out_shapes[:1]):
-                    out_features, res_features = abf(x, res_features, shape, out_shape)
+            for feature, abf, shape, out_shape in zip(x[1:], self.abfs[:1], self.shapes[:1], self.out_shapes[:1]):
+                    out_features, res_features = abf(feature, res_features, shape, out_shape, feature_type=self.ft_type)
                     results.insert(0, out_features)
 
         return results
@@ -260,16 +263,16 @@ class ReviewKD(nn.Module):
 
 def build_review_kd(feature_maps, ft_type):
     if ft_type == 'encoder':
-        in_channels = [32, 64, 128, 256, 256, 256]
-        out_channels = [32, 64, 128, 256, 256, 256]
-        shapes = [1,4,4]
-        out_shape = None
+        in_channels = [8, 16, 32, 64, 64, 64]
+        out_channels = [5, 5, 5, 5, 5, 5]
+        shapes = [4,8,16,32,64,128]
+        out_shape = [1,1,1,1,1,1]
 
     elif ft_type == 'decoder':
-        in_channels = [32, 64, 128, 256, 64, 2]
-        out_channels = [32, 64, 128, 256, 64, 256]
-        shapes = [1,4,4,4,4]
-        out_shape = [4,4,4,4,4]
+        in_channels = [2, 8, 16, 32, 64, 64]
+        out_channels = [5, 5, 5, 5, 5, 5]
+        shapes = [8,16,32,64,128,256]
+        out_shape = [1,1,1,1,1,1]
 
 
     model = ReviewKD(in_channels, out_channels, shapes, out_shape, feature_maps, ft_type)
