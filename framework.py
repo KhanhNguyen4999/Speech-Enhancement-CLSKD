@@ -254,9 +254,9 @@ class ReviewKD(nn.Module):
             results = []
             out_features, res_features = self.abfs[0](x[0], out_shape=self.out_shapes[0], feature_type=self.ft_type)
             results.append(out_features)
-            for feature, abf, shape, out_shape in zip(x[1:], self.abfs[:1], self.shapes[:1], self.out_shapes[:1]):
+            for feature, abf, shape, out_shape in zip(x[1:], self.abfs[1:], self.shapes[1:], self.out_shapes[1:]):
                     out_features, res_features = abf(feature, res_features, shape, out_shape, feature_type=self.ft_type)
-                    results.insert(0, out_features)
+                    results.append(out_features)
 
         return results
     
@@ -264,15 +264,15 @@ class ReviewKD(nn.Module):
 def build_review_kd(feature_maps, ft_type):
     if ft_type == 'encoder':
         in_channels = [8, 16, 32, 64, 64, 64]
-        out_channels = [5, 5, 5, 5, 5, 5]
+        out_channels = [32, 64, 128, 256, 256, 256]
         shapes = [4,8,16,32,64,128]
-        out_shape = [1,1,1,1,1,1]
+        out_shape = [4,8,16,32,64,128]
 
     elif ft_type == 'decoder':
         in_channels = [2, 8, 16, 32, 64, 64]
-        out_channels = [5, 5, 5, 5, 5, 5]
+        out_channels = [2, 32, 64, 128, 256, 256]
         shapes = [8,16,32,64,128,256]
-        out_shape = [1,1,1,1,1,1]
+        out_shape = [8,16,32,64,128,256]
 
 
     model = ReviewKD(in_channels, out_channels, shapes, out_shape, feature_maps, ft_type)

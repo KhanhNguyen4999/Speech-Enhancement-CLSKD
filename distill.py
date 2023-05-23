@@ -74,8 +74,8 @@ class KnowledgeDistillation(pl.LightningModule):
 
         
         # calculating based-loss (Multi-resolution STFT)
-        student_preds = self.student(X, is_feat=True)
-        base_loss = self.stft_loss(student_preds,y)[1]
+        teacher_preds = self.teacher(X, is_feat=True)
+        base_loss = self.stft_loss(teacher_preds,y)[1]
         
 
         feature_maps_loss = {'encoder':0,'decoder':0,'clstm_real':0,'clstm_img':0}
@@ -183,11 +183,11 @@ student =  DCCRN(rnn_units=cfg.rnn_units_student, masking_mode=cfg.masking_mode,
                 kernel_num=cfg.kernel_num_student)
 
 # initalize checkpoint
-checkpoint_callback = ModelCheckpoint(
-                    dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
-                    filename='model-{epoch:02d}-{val_loss:.2f}',
-                    save_top_k=10,
-                    monitor='val_loss')
+# checkpoint_callback = ModelCheckpoint(
+#                     dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
+#                     filename='model-{epoch:02d}-{val_loss:.2f}',
+#                     save_top_k=10,
+#                     monitor='val_loss')
 
 
 # initialize trainer
@@ -195,7 +195,8 @@ trainer = pl.Trainer(max_epochs=cfg.max_epochs,
                     accelerator="gpu", 
                     devices=[2],
                     default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
-                    callbacks=[checkpoint_callback])
+                    #callbacks=[checkpoint_callback]
+                    )
 
 # initialize knowledge distillation module
 kd_module = KnowledgeDistillation(teacher, 
