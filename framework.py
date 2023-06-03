@@ -265,17 +265,17 @@ class ReviewKD(nn.Module):
 
 def build_review_kd(feature_maps, ft_type):
     if ft_type == 'encoder':
-        in_channels = [8, 16, 32, 64, 64, 64]
+        in_channels = [16, 32, 64, 128, 128, 128]
         #out_channels = [32, 64, 128, 256, 256, 256]
-        out_channels = [16, 32, 64, 128, 128, 128]
+        out_channels = [32, 64, 128, 256, 256,256]
         shapes = [4,8,16,32,64,128]
         out_shapes = [4,8,16,32,64,128]
 
     elif ft_type == 'decoder':
-        in_channels = [2, 8, 16, 32, 64, 64]
+        in_channels = [16, 32, 64, 128, 128, 128]
         # out_channels = [2, 32, 64, 128, 256, 256]
-        out_channels = [16, 32, 64, 128, 128, 128]
-        shapes = [8,16,32,64,128,256]
+        out_channels = [32, 64, 128, 256, 256,256]
+        shapes = [4,8,16,32,64,128]
         # out_shapes = [8,16,32,64,128,256]
         out_shapes = [4,8,16,32,64,128]
 
