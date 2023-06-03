@@ -8,7 +8,7 @@ import config as cfg
 from tools_for_model import ConvSTFT, ConviSTFT, \
     ComplexConv2d, ComplexConvTranspose2d, NavieComplexLSTM, complex_cat, ComplexBatchNorm
 from tools_for_loss import si_snr, si_sdr, get_array_mel_loss, pmsqe_stft, pmsqe_loss, sdr
-from asteroid.filterbanks import transforms
+from asteroid_filterbanks import transforms
 
 
 class DCCRN(nn.Module):
@@ -172,7 +172,7 @@ class DCCRN(nn.Module):
 
         for idx, layer in enumerate(self.encoder):
             out = layer(out)
-            #    print('encoder', out.size())
+            #print('encoder', out.size())
             encoder_out.append(out)
 
         batch_size, channels, dims, lengths = out.size()
@@ -200,9 +200,10 @@ class DCCRN(nn.Module):
 
         for idx in range(len(self.decoder)):
             out = complex_cat([out, encoder_out[-1 - idx]], 1)
+            # print('encoder', encoder_out[-1 - idx].shape)
             out = self.decoder[idx](out)
             out = out[..., 1:]
-        #    print('decoder', out.size())
+            #print('decoder', out.size())
         mask_real = out[:, 0]
         mask_imag = out[:, 1]
         mask_real = F.pad(mask_real, [0, 0, 1, 0])

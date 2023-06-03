@@ -3,7 +3,7 @@ import math
 import numpy as np
 import config as cfg
 from asteroid.losses import SingleSrcPMSQE, PITLossWrapper
-from asteroid.filterbanks import STFTFB, Encoder
+from asteroid_filterbanks import STFTFB, Encoder
 
 
 # Set training device

@@ -195,11 +195,13 @@ class ABF(nn.Module):
         nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)  # pyre-ignore
 
         # Move the model to the GPU
-        self.cuda()
+        #self.cuda()
 
         # Convert the weights to torch.cuda.FloatTensor
-        self.conv1[0].weight = nn.Parameter(self.conv1[0].weight.cuda())
-        self.conv2[0].weight = nn.Parameter(self.conv2[0].weight.cuda())
+        # self.conv1[0].weight = nn.Parameter(self.conv1[0].weight.cuda())
+        # self.conv2[0].weight = nn.Parameter(self.conv2[0].weight.cuda())
+        self.conv1[0].weight = nn.Parameter(self.conv1[0].weight)
+        self.conv2[0].weight = nn.Parameter(self.conv2[0].weight)
 
     def forward(self, x, y=None, shape=None, out_shape=None, feature_type=None):
         n,_,h,w = x.shape
@@ -208,16 +210,16 @@ class ABF(nn.Module):
         if self.att_conv is not None:
             # upsample residual features
             if feature_type == "encoder":
-                y = F.interpolate(y, (shape,483), mode="nearest")
+                y = F.interpolate(y, (shape,w), mode="nearest")
             elif feature_type == "decoder":
-                y = F.interpolate(y, (shape,484), mode="nearest")
+                y = F.interpolate(y, (shape,w), mode="nearest")
             # fusion
             z = torch.cat([x, y], dim=1)
             z = self.att_conv(z)
             x = (x * z[:,0].view(n,1,h,w) + y * z[:,1].view(n,1,h,w))
         # output 
         if x.shape[-1] != out_shape:
-            x = F.interpolate(x, (out_shape, out_shape), mode="nearest")
+            x = F.interpolate(x, (out_shape, w), mode="nearest")
         y = self.conv2(x)
         return y, x
 
@@ -264,18 +266,21 @@ class ReviewKD(nn.Module):
 def build_review_kd(feature_maps, ft_type):
     if ft_type == 'encoder':
         in_channels = [8, 16, 32, 64, 64, 64]
-        out_channels = [32, 64, 128, 256, 256, 256]
+        #out_channels = [32, 64, 128, 256, 256, 256]
+        out_channels = [16, 32, 64, 128, 128, 128]
         shapes = [4,8,16,32,64,128]
-        out_shape = [4,8,16,32,64,128]
+        out_shapes = [4,8,16,32,64,128]
 
     elif ft_type == 'decoder':
         in_channels = [2, 8, 16, 32, 64, 64]
-        out_channels = [2, 32, 64, 128, 256, 256]
+        # out_channels = [2, 32, 64, 128, 256, 256]
+        out_channels = [16, 32, 64, 128, 128, 128]
         shapes = [8,16,32,64,128,256]
-        out_shape = [8,16,32,64,128,256]
+        # out_shapes = [8,16,32,64,128,256]
+        out_shapes = [4,8,16,32,64,128]
 
 
-    model = ReviewKD(in_channels, out_channels, shapes, out_shape, feature_maps, ft_type)
+    model = ReviewKD(in_channels, out_channels, shapes, out_shapes, feature_maps, ft_type)
     return model
 
 

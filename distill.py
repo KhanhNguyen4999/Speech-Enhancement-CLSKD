@@ -1,6 +1,7 @@
 from typing import Any
 import numpy as np
-import os 
+import os
+import argparse
 from pytorch_lightning.utilities.types import EVAL_DATALOADERS
 from pytorch_lightning.callbacks import ModelCheckpoint
 import torch
@@ -10,7 +11,11 @@ import torchvision.transforms as transforms
 import pytorch_lightning as pl
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from asteroid.data import DNSDataset
+from asteroid.models import DCCRNet, DCCRNet_mini
 from DCCRN import DCCRN
+import yaml
+from pprint import pprint
+from asteroid.utils import prepare_parser_from_dict, parse_args_as_dict
 from dataloader import create_dataloader
 from tools_for_model import cal_pesq, cal_stoi
 
@@ -28,8 +33,8 @@ class KnowledgeDistillation(pl.LightningModule):
 
         #load teacher (pre-trained)
         self.teacher = teacher
-        self.teacher_checkpoint = torch.load(cfg.teacher_weight_path)
-        self.teacher.load_state_dict(self.teacher_checkpoint['model'])
+        #self.teacher_checkpoint = torch.load(cfg.teacher_weight_path)
+        #self.teacher.load_state_dict(self.teacher_checkpoint['model'])
 
         #freeze teacher
         for paras in self.teacher.parameters():
@@ -65,17 +70,17 @@ class KnowledgeDistillation(pl.LightningModule):
         student_features_decoder = model_decoder(X)
 
         # getting teacher features
-        teacher_extraction = feature_extraction.DCCRN(self.teacher)
+        teacher_extraction = feature_extraction.DCCRNet(self.teacher)
         teacher_features = teacher_extraction.extract_feature_maps(X)
         teacher_encoder, teacher_decoder, teacher_clstm_real, teacher_clstm_img = (teacher_features["encoder"], 
                                                                                    teacher_features["decoder"], 
-                                                                                   teacher_features["clstm"][0][0], 
-                                                                                   teacher_features["clstm"][0][1])
+                                                                                   teacher_features["clstm_real"][0], 
+                                                                                   teacher_features["clstm_img"][0])
 
         
         # calculating based-loss (Multi-resolution STFT)
-        teacher_preds = self.teacher(X, is_feat=True)
-        base_loss = self.stft_loss(teacher_preds,y)[1]
+        student_preds = self.student(X, is_feat=True)
+        base_loss = self.stft_loss(student_preds,y)[1]
         
 
         feature_maps_loss = {'encoder':0,'decoder':0,'clstm_real':0,'clstm_img':0}
@@ -103,14 +108,19 @@ class KnowledgeDistillation(pl.LightningModule):
 
 
         ############## C-LSTM REAL loss ######################
+        #reshape student
+        w,n,h = student_clstm_real.shape
+        student_clstm_real = student_clstm_real.reshape(n,h,w)
         # calculating review kd loss
-        kd_loss = self.spkd_loss(student_clstm_real, teacher_clstm_real,reduction=None)
+        kd_loss = self.spkd_loss(student_clstm_real, teacher_clstm_real,reduction='batchmean')
         feature_maps_loss['clstm_real'] = kd_loss()
         
 
         ############## C-LSTM IMAGE loss ######################
+        w,n,h = student_clstm_img.shape
+        student_clstm_img = student_clstm_img.reshape(n,h,w)
         # calculating review kd loss
-        kd_loss = self.spkd_loss(student_clstm_img, teacher_clstm_img,reduction=None)
+        kd_loss = self.spkd_loss(student_clstm_img, teacher_clstm_img,reduction='batchmean')
         feature_maps_loss['clstm_img'] = kd_loss()
         
 
@@ -176,11 +186,20 @@ class KnowledgeDistillation(pl.LightningModule):
 #setup
 torch.set_float32_matmul_precision('high')
 
+#read config file
+parser = argparse.ArgumentParser()
+with open("./Speech_Enhancement_new/knowledge_distillation_CLSKD/conf.yml") as f:
+    def_conf = yaml.safe_load(f)
+    parser = prepare_parser_from_dict(def_conf, parser=parser)
+conf, plain_args = parse_args_as_dict(parser, return_plain_args=True)
+pprint(conf)
+
 # initialize models
-teacher =  DCCRN(rnn_units=cfg.rnn_units, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
-                kernel_num=cfg.kernel_num)
-student =  DCCRN(rnn_units=cfg.rnn_units_student, masking_mode=cfg.masking_mode, use_clstm=cfg.use_clstm,
-                kernel_num=cfg.kernel_num_student)
+teacher =  DCCRNet.from_pretrained('JorisCos/DCCRNet_Libri1Mix_enhsingle_16k')
+student =  DCCRNet_mini(
+        **conf["filterbank"], **conf["masknet"], sample_rate=conf["data"]["sample_rate"])
+
+
 
 # initalize checkpoint
 # checkpoint_callback = ModelCheckpoint(
