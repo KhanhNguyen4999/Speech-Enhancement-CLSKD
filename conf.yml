@@ -4,7 +4,7 @@ filterbank:
   stft_kernel_size: 400
   stft_stride: 100
 masknet:
-  architecture: DCCRN-CL-mini
+  architecture: DCCRN-CL-test
 data:
   task: enh_single
   train_dir: data/wav16k/max/train-360

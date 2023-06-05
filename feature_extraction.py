@@ -45,8 +45,7 @@ class DCCRN():
         """
      
         # Pass input through the model to extract feature maps
-        with torch.no_grad():
-            self.model(input)
+        self.model(input)
     
         return self.feature_maps
     
@@ -100,8 +99,7 @@ class DCCRNet():
         """
      
         # Pass input through the model to extract feature maps
-        with torch.no_grad():
-            self.model(input)
+        self.model(input)
     
         # Handle with complex LSTM - complex number
         self.feature_maps["clstm_real"].append(self.clstm[0].real)
