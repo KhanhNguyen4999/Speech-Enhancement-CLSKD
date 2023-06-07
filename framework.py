@@ -195,13 +195,13 @@ class ABF(nn.Module):
         nn.init.kaiming_uniform_(self.conv2[0].weight, a=1)  # pyre-ignore
 
         # Move the model to the GPU
-        self.cuda()
+        #self.cuda()
 
         # Convert the weights to torch.cuda.FloatTensor
-        self.conv1[0].weight = nn.Parameter(self.conv1[0].weight.cuda())
-        self.conv2[0].weight = nn.Parameter(self.conv2[0].weight.cuda())
-        # self.conv1[0].weight = nn.Parameter(self.conv1[0].weight)
-        # self.conv2[0].weight = nn.Parameter(self.conv2[0].weight)
+        #self.conv1[0].weight = nn.Parameter(self.conv1[0].weight.cuda())
+        #self.conv2[0].weight = nn.Parameter(self.conv2[0].weight.cuda())
+        self.conv1[0].weight = nn.Parameter(self.conv1[0].weight)
+        self.conv2[0].weight = nn.Parameter(self.conv2[0].weight)
 
     def forward(self, x, y=None, shape=None, out_shape=None, feature_type=None):
         n,_,h,w = x.shape

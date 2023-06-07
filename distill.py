@@ -17,6 +17,7 @@ from DCCRN import DCCRN
 import yaml
 from pprint import pprint
 from asteroid.utils import prepare_parser_from_dict, parse_args_as_dict
+from asteroid.metrics import get_metrics
 from dataloader import create_dataloader
 from tools_for_model import cal_pesq, cal_stoi
 from torch_stoi import NegSTOILoss
@@ -26,7 +27,7 @@ from framework import MultiResolutionSTFTLoss, SPKDLoss, build_review_kd
 import feature_extraction
 import config as cfg
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "1"
+#os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "1"
 
 class KnowledgeDistillation(pl.LightningModule):
     def __init__(self, teacher, student, sftf_loss, spkd_loss, cfg):
@@ -49,7 +50,8 @@ class KnowledgeDistillation(pl.LightningModule):
         self.spkd_loss = spkd_loss
     
         #base loss - MRSFTF loss
-        self.stft_loss = sftf_loss(fft_sizes=[cfg.fft_len], win_lengths=[cfg.win_len],hop_sizes=[cfg.win_inc])
+        self.stft_loss = sftf_loss(fft_sizes=[512], win_lengths=[32],hop_sizes=[16])
+        #self.stft_loss = sftf_loss(fft_sizes=[cfg.fft_len], win_lengths=[cfg.win_len],hop_sizes=[cfg.win_inc])
 
         #val_loss function
         self.sisdr = PITLossWrapper(pairwise_neg_sisdr, pit_from="pw_mtx")
@@ -141,33 +143,15 @@ class KnowledgeDistillation(pl.LightningModule):
         x, y,_ = batch
         student_preds = self.student(x)
 
-
-        estimated_wavs = student_preds.cpu().detach().squeeze().numpy()
-        clean_wavs = y.cpu().detach().numpy()
-
-        #pesq-stoi
-        pesq = cal_pesq(estimated_wavs, clean_wavs)  ## 98
-        stoi = cal_stoi(estimated_wavs, clean_wavs)
-
-        # reshape for sum
-        pesq = np.reshape(pesq, (1, -1))
-        stoi = np.reshape(stoi, (1, -1))
-
-        avg_pesq = sum(pesq[0]) / len(x)
-        avg_stoi = sum(stoi[0]) / len(x)
-
-        #si_sdr
-        si_sdr = self.sisdr(student_preds.detach(),y.detach().unsqueeze(1))
-
-        #stoi
-        stoi = self.stoi(student_preds.detach(),y.detach().unsqueeze(1))
-        # logging val_pesq, val_stoi
-        self.log_dict({"val_pesq": avg_pesq, "val_stoi": avg_stoi, "si_sdr":si_sdr,"stoi":stoi}, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        mix = x.cpu().data.numpy()
+        clean= y.cpu().data.numpy()
+        estimate = student_preds.cpu().squeeze(1).data.numpy()
+        metric_dict = get_metrics(mix=mix,clean=clean,estimate=estimate)
+        # logging metrics
+        self.log_dict(metric_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True)
        
-        return {"val_pesq": avg_pesq, "val_stoi": avg_stoi, "si_sdr":si_sdr,"stoi":stoi}
-    
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.student.parameters(), lr=cfg.learning_rate, weight_decay=5e-4)
+        optimizer = optim.Adam(self.student.parameters(), lr=cfg.learning_rate)
         return optimizer
     
     def train_dataloader(self):
@@ -205,15 +189,15 @@ checkpoint_callback = ModelCheckpoint(
                     dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
                     filename='model-{epoch:02d}-{si_sdr:.2f}-{stoi:.2f}',
                     save_top_k=2,
-                    monitor='si_sdr',
-                    mode='min',
+                    monitor='stoi',
+                    mode='max',
                     verbose=True)
 
 
 # initialize trainer
 trainer = pl.Trainer(max_epochs=cfg.max_epochs, 
-                    accelerator="gpu", 
-                    devices=[1],
+                    accelerator="cpu", 
+                    devices="auto",
                     default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
                     callbacks=[checkpoint_callback]
                     )
@@ -227,3 +211,24 @@ kd_module = KnowledgeDistillation(teacher,
 
 # train the student network using knowledge distillation
 trainer.fit(kd_module)
+
+# load best student model 
+state_dict = torch.load(checkpoint_callback.best_model_path)
+only_student_state_dict = {}
+for key,value in state_dict['state_dict'].items():
+    if key.startswith('student.'):
+        only_student_state_dict[key.replace('student.','')] = value
+    else:
+        continue
+state_dict['state_dict'] = only_student_state_dict
+
+student.load_state_dict(state_dict=state_dict["state_dict"])
+student.cpu()
+
+# save the best student model  
+to_save = student.serialize()
+torch.save(to_save,os.path.join('/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint', "tgt_model.pth"))
+
+
+
+
