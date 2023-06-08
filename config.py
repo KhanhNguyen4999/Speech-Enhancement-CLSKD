@@ -39,7 +39,7 @@ loss_mode = 'SDR+PMSQE'
 # hyperparameters for model train
 max_epochs = 20
 learning_rate = 0.0006
-batch = 4
+batch = 32
 
 
 ########################### STUDENT ###########################

@@ -1,0 +1,78 @@
+from torch import optim
+from pytorch_lightning import Trainer
+import torch
+import argparse
+import yaml
+import torch.nn as nn
+from dataloader import create_dataloader
+from tools_for_model import near_avg_index, max_index, min_index, Bar, cal_pesq, cal_stoi
+from pprint import pprint
+from framework import ABF, MultiResolutionSTFTLoss, SPKDLoss, build_review_kd, ReviewKD
+from pprint import pprint
+from asteroid.utils import prepare_parser_from_dict, parse_args_as_dict
+# import inspect module
+import inspect
+import feature_extraction
+import DCCRN
+import torch
+from asteroid.data import DNSDataset
+import os
+import torch.nn.functional as F
+import time
+import torch.nn as nn
+import shutil
+import numpy as np
+from framework import ABF, MultiResolutionSTFTLoss, SPKDLoss, build_review_kd, ReviewKD
+from asteroid.models import DCCRNet
+import torch
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
+import config as cfg
+from tools_for_model import near_avg_index, max_index, min_index, Bar, cal_pesq, cal_stoi
+from dataloader import create_dataloader
+from asteroid.metrics import get_metrics
+import inspect
+import os
+import feature_extraction
+from asteroid.models import DCCRNet_mini
+from asteroid.metrics import get_metrics
+from asteroid.data.librimix_dataset import LibriMix
+from asteroid.losses import PITLossWrapper, pairwise_neg_sisdr
+from asteroid import DCCRNet
+from asteroid.models import save_publishable
+from asteroid.utils import tensors_to_device
+from asteroid.dsp.normalization import normalize_estimates
+from asteroid.metrics import WERTracker, MockWERTracker
+#os.environ["CUDA_VISIBLE_DEVICES"]="2"
+
+from asteroid.models import DCCRNet, DCCRNet_mini
+
+
+parser = argparse.ArgumentParser()
+with open("./Speech_Enhancement_new/knowledge_distillation_CLSKD/conf.yml") as f:
+    def_conf = yaml.safe_load(f)
+    parser = prepare_parser_from_dict(def_conf, parser=parser)
+conf, plain_args = parse_args_as_dict(parser, return_plain_args=True)
+pprint(conf)
+
+# initialize models
+#teacher =  DCCRNet.from_pretrained('JorisCos/DCCRNet_Libri1Mix_enhsingle_16k')
+student =  DCCRNet_mini(
+        **conf["filterbank"], **conf["masknet"], sample_rate=conf["data"]["sample_rate"])
+
+# load best student model 
+state_dict = torch.load('/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint/model-epoch=01-si_sdr=0.00-stoi=0.00.ckpt')
+only_student_state_dict = {}
+for key,value in state_dict['state_dict'].items():
+    if key.startswith('student.'):
+        only_student_state_dict[key.replace('student.','')] = value
+    else:
+        continue
+state_dict['state_dict'] = only_student_state_dict
+
+student.load_state_dict(state_dict=state_dict["state_dict"])
+student.cpu()
+
+# save the best student model  
+to_save = student.serialize()
+torch.save(to_save,os.path.join('/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint', "tgt_model.pth"))
