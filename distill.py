@@ -32,7 +32,7 @@ import feature_extraction
 import config as cfg
 
 #os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "1"
-COMPUTE_METRICS = ["stoi"]
+COMPUTE_METRICS = ["si_sdr","stoi"]
 
 
 class KnowledgeDistillation(pl.LightningModule):
@@ -56,7 +56,7 @@ class KnowledgeDistillation(pl.LightningModule):
         self.spkd_loss = spkd_loss
     
         #base loss - MRSFTF loss
-        self.stft_loss = sftf_loss(fft_sizes=[512], win_lengths=[32],hop_sizes=[16])
+        self.stft_loss = sftf_loss(fft_sizes=[512], win_lengths=[400],hop_sizes=[100])
         #self.stft_loss = sftf_loss(fft_sizes=[cfg.fft_len], win_lengths=[cfg.win_len],hop_sizes=[cfg.win_inc])
 
         #
@@ -251,7 +251,7 @@ student =  DCCRNet_mini(
 # initalize checkpoint
 checkpoint_callback = ModelCheckpoint(
                     dirpath='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD/checkpoint',
-                    filename='model-{epoch:02d}-{stoi:.4f}',
+                    filename='model-{epoch:02d}-{stoi:.4f}-{si_sdr:.3f}',
                     save_top_k=3,
                     monitor='stoi',
                     mode='max',
@@ -261,7 +261,7 @@ checkpoint_callback = ModelCheckpoint(
 # initialize trainer
 trainer = pl.Trainer(max_epochs=cfg.max_epochs, 
                     accelerator="gpu", 
-                    devices=[0],
+                    devices=[2],
                     default_root_dir='/root/NTH_student/Speech_Enhancement_new/knowledge_distillation_CLSKD',
                     callbacks=[checkpoint_callback]
                     )

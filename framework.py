@@ -284,7 +284,26 @@ def build_review_kd(feature_maps, ft_type):
     return model
 
 
-
+def hcl(fstudent, fteacher, t_type):
+    loss_all = 0.0
+    for fs, ft in zip(fstudent, fteacher):
+        if t_type == 'lstm':
+            h,w = fs.shape
+        else: n,h,w = fs.shape
+        loss = F.mse_loss(fs, ft, reduction='mean')
+        cnt = 1.0
+        tot = 1.0
+        for l in [4,2,1]:
+            if l >=h:
+                continue
+            tmpfs = F.adaptive_avg_pool2d(fs, (l,l))
+            tmpft = F.adaptive_avg_pool2d(ft, (l,l))
+            cnt /= 2.0
+            loss += F.mse_loss(tmpfs, tmpft, reduction='mean') * cnt
+            tot += cnt
+        loss = loss / tot
+        loss_all = loss_all + loss
+    return loss_all
 
 
 # class ABF(nn.Module):
